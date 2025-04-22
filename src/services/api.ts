@@ -1,5 +1,5 @@
-
 import { Post, Platform, AnalyticsData } from "@/types";
+import { supabase } from "@/integrations/supabase/client";
 
 // Mock data
 const MOCK_POSTS: Post[] = [
@@ -79,15 +79,46 @@ const MOCK_ANALYTICS: AnalyticsData[] = [
   { date: "2023-04-21", likes: 82, comments: 24, shares: 15 }
 ];
 
+// In a real app, this would be stored in a user-specific way
+const userPosts = new Map<string, Post[]>();
+
 // API service for posts
 export const postService = {
   getPosts: async (): Promise<Post[]> => {
+    // Try to get the current user
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    
+    // If we have a logged-in user and they have posts, return those
+    if (userId && userPosts.has(userId)) {
+      return [...userPosts.get(userId)!];
+    }
+    
+    // Otherwise return mock data (or in a real app, fetch from database)
     // Simulate API request delay
     await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // If user is logged in, associate these posts with them
+    if (userId) {
+      userPosts.set(userId, [...MOCK_POSTS]);
+    }
+    
     return [...MOCK_POSTS];
   },
   
   getPostById: async (id: string): Promise<Post> => {
+    // Try to get the current user
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    
+    // If we have a logged-in user and they have posts, search those
+    if (userId && userPosts.has(userId)) {
+      const post = userPosts.get(userId)!.find(post => post.id === id);
+      if (post) {
+        return { ...post };
+      }
+    }
+    
     await new Promise(resolve => setTimeout(resolve, 500));
     const post = MOCK_POSTS.find(post => post.id === id);
     
@@ -109,7 +140,20 @@ export const postService = {
       updatedAt: new Date().toISOString()
     };
     
-    MOCK_POSTS.push(newPost);
+    // Get the current user
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    
+    // If we have a logged-in user, associate the post with them
+    if (userId) {
+      if (!userPosts.has(userId)) {
+        userPosts.set(userId, []);
+      }
+      userPosts.get(userId)!.push(newPost);
+    } else {
+      // Fallback to mock data if not logged in
+      MOCK_POSTS.push(newPost);
+    }
     
     return { ...newPost };
   },
@@ -117,19 +161,30 @@ export const postService = {
   updatePost: async (id: string, postData: Partial<Post>): Promise<Post> => {
     await new Promise(resolve => setTimeout(resolve, 800));
     
-    const postIndex = MOCK_POSTS.findIndex(post => post.id === id);
+    // Get the current user
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    
+    let targetPosts = MOCK_POSTS;
+    
+    // If we have a logged-in user and they have posts, update those
+    if (userId && userPosts.has(userId)) {
+      targetPosts = userPosts.get(userId)!;
+    }
+    
+    const postIndex = targetPosts.findIndex(post => post.id === id);
     
     if (postIndex === -1) {
       throw new Error("Post not found");
     }
     
     const updatedPost = {
-      ...MOCK_POSTS[postIndex],
+      ...targetPosts[postIndex],
       ...postData,
       updatedAt: new Date().toISOString()
     };
     
-    MOCK_POSTS[postIndex] = updatedPost;
+    targetPosts[postIndex] = updatedPost;
     
     return { ...updatedPost };
   },
@@ -137,13 +192,24 @@ export const postService = {
   deletePost: async (id: string): Promise<void> => {
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    const postIndex = MOCK_POSTS.findIndex(post => post.id === id);
+    // Get the current user
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    
+    let targetPosts = MOCK_POSTS;
+    
+    // If we have a logged-in user and they have posts, delete from those
+    if (userId && userPosts.has(userId)) {
+      targetPosts = userPosts.get(userId)!;
+    }
+    
+    const postIndex = targetPosts.findIndex(post => post.id === id);
     
     if (postIndex === -1) {
       throw new Error("Post not found");
     }
     
-    MOCK_POSTS.splice(postIndex, 1);
+    targetPosts.splice(postIndex, 1);
   }
 };
 
@@ -157,8 +223,11 @@ export const platformService = {
 
 // API service for analytics
 export const analyticsService = {
-  getAnalytics: async (): Promise<AnalyticsData[]> => {
+  getAnalytics: async (period = 'week'): Promise<AnalyticsData[]> => {
     await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // In a real app, we'd fetch data for the specific period
+    // For now, we'll just return mock data
     return [...MOCK_ANALYTICS];
   }
 };

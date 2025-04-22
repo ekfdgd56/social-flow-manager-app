@@ -1,19 +1,24 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { User, Session } from "@supabase/supabase-js";
+import { useToast } from "@/hooks/use-toast";
 
-interface User {
+interface UserProfile {
   id: string;
   name: string;
   email: string;
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: UserProfile | null;
+  session: Session | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
+  updateProfile: (data: Partial<UserProfile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -27,43 +32,70 @@ export const useAuth = () => {
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
-    // Check if user is stored in localStorage
-    const storedUser = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
-    
-    if (storedUser && token) {
-      setUser(JSON.parse(storedUser));
-    }
-    
-    setIsLoading(false);
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
+      setSession(currentSession);
+      
+      if (currentSession?.user) {
+        const { id, email, user_metadata } = currentSession.user;
+        setUser({
+          id,
+          email: email || '',
+          name: user_metadata?.name || ''
+        });
+      } else {
+        setUser(null);
+      }
+    });
+
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
+      
+      if (currentSession?.user) {
+        const { id, email, user_metadata } = currentSession.user;
+        setUser({
+          id,
+          email: email || '',
+          name: user_metadata?.name || ''
+        });
+      }
+      
+      setIsLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     
     try {
-      // In a real app, this would be an API call
-      // Simulating API call for demo purposes
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
       
-      // Mock successful login
-      const mockUser = {
-        id: "user_123",
-        name: "Demo User",
-        email
-      };
+      if (error) throw error;
       
-      // Store user and token in localStorage
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      localStorage.setItem('token', 'mock_jwt_token');
-      
-      setUser(mockUser);
-    } catch (error) {
-      console.error('Login failed:', error);
+      toast({
+        title: "Login successful",
+        description: "Welcome back!",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: error.message || "Please check your credentials",
+      });
       throw error;
     } finally {
       setIsLoading(false);
@@ -74,43 +106,92 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     
     try {
-      // In a real app, this would be an API call
-      // Simulating API call for demo purposes
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+          }
+        }
+      });
       
-      // Mock successful registration
-      const mockUser = {
-        id: "user_" + Math.floor(Math.random() * 1000),
-        name,
-        email
-      };
+      if (error) throw error;
       
-      // Store user and token in localStorage
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      localStorage.setItem('token', 'mock_jwt_token');
-      
-      setUser(mockUser);
-    } catch (error) {
-      console.error('Registration failed:', error);
+      toast({
+        title: "Registration successful",
+        description: "Your account has been created",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Registration failed",
+        description: error.message || "Please try again with different credentials",
+      });
       throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    setUser(null);
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+      toast({
+        title: "Logged out",
+        description: "You have been logged out successfully",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Logout failed",
+        description: error.message || "An error occurred during logout",
+      });
+    }
+  };
+
+  const updateProfile = async (data: Partial<UserProfile>) => {
+    if (!user) return;
+    
+    try {
+      // Update auth user metadata
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: {
+          name: data.name,
+        }
+      });
+      
+      if (updateError) throw updateError;
+      
+      // Update our local state
+      setUser({
+        ...user,
+        ...data
+      });
+      
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been updated successfully",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Update failed",
+        description: error.message || "Failed to update profile",
+      });
+      throw error;
+    }
   };
 
   const value = {
     user,
-    isAuthenticated: !!user,
+    session,
+    isAuthenticated: !!session,
     isLoading,
     login,
     register,
-    logout
+    logout,
+    updateProfile
   };
 
   return (

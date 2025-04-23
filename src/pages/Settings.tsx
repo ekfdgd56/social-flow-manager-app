@@ -1,5 +1,4 @@
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +8,6 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/context/AuthContext";
 import { platformService } from "@/services/api";
-import { useState, useEffect } from "react";
 import { Platform } from "@/types";
 import { Facebook, Instagram, Settings as SettingsIcon, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
